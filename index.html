@@ -363,6 +363,8 @@ window.FIREBASE_CONFIG = {
   var $=function(id){return document.getElementById(id);};
   var COLORS=['#3e63dd','#d6409f','#e5484d','#f76b15','#12a594','#8e4ec6','#30a46c','#0090ff'];
   var EMAIL='@wb-board.app';
+  var BID=(function(){var m=/[#&]b=([A-Za-z0-9_-]{1,40})/.exec(location.hash||'');if(m){try{localStorage.setItem('wb:board',m[1]);}catch(_){}return m[1];}try{return localStorage.getItem('wb:board')||'main';}catch(_){return 'main';}})();
+  var boardName='';
   var fb=window.firebase,auth,fs,rtdb,me=null,readyRes,readyP=new Promise(function(r){readyRes=r;});
   function esc(s){return String(s).replace(/[&<>"]/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c];});}
   function colorOf(uid){var h=0;for(var i=0;i<uid.length;i++)h=(h*31+uid.charCodeAt(i))>>>0;return COLORS[h%COLORS.length];}
@@ -427,6 +429,11 @@ window.FIREBASE_CONFIG = {
     me={id:user.uid,name:name,color:colorOf(user.uid),avatarUrl:avatar(name,colorOf(user.uid))};
     var o=$('wbLogin');if(o)o.hidden=true;
     fs.collection('profiles').doc(user.uid).set({name:name,color:me.color}).catch(function(){});
+    var bd=fs.collection('boards').doc(BID);
+    bd.get().then(function(d){
+      if(!d.exists)return bd.set({name:BID==='main'?'Доска 1':'Новая доска',t:Date.now(),by:user.uid});
+      boardName=d.data().name||'';document.title=boardName||'Общий вайтборд';
+    }).catch(function(){});
     readyRes();
   }
   auth.onAuthStateChanged(function(u){
@@ -438,7 +445,40 @@ window.FIREBASE_CONFIG = {
     }
   });
   window.WB_LOGOUT=function(){auth.signOut();};
+  function openBoard(id){location.hash='b='+id;location.reload();}
+  window.WB_BOARDS=function(){
+    if($('wbBoards'))return;
+    var o=document.createElement('div');o.id='wbBoards';
+    o.style.cssText='position:fixed;inset:0;z-index:99998;background:rgba(20,22,30,.45);display:grid;place-items:center;padding:16px;font-family:"Golos Text",system-ui,sans-serif;color:#464959';
+    o.innerHTML='<style>#wbBoards .bx{background:#fff;border-radius:16px;padding:18px;width:min(380px,100%);max-height:86vh;display:flex;flex-direction:column;box-shadow:0 8px 30px rgba(0,0,0,.2)}#wbBoards h2{margin:0 0 10px;font-size:18px;display:flex;justify-content:space-between;align-items:center}#wbBoards h2 button{border:0;background:none;font-size:24px;line-height:1;color:#74778a;cursor:pointer}#wbBoards .ls{overflow:auto;flex:1;margin:0 -4px}#wbBoards .it{display:flex;align-items:center;gap:4px;padding:2px 4px}#wbBoards .it .nm{flex:1;min-width:0;text-align:left;font:inherit;font-size:15px;padding:11px 10px;border:0;border-radius:10px;background:none;cursor:pointer;color:inherit;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}#wbBoards .it .nm:hover{background:#eff0f6}#wbBoards .it.cur .nm{background:#e6ebff;font-weight:600}#wbBoards .it .sm{border:0;background:none;font-size:16px;padding:8px;border-radius:8px;cursor:pointer;color:#74778a}#wbBoards .it .sm:hover{background:#eff0f6}#wbBoards .new{display:flex;gap:8px;margin-top:12px}#wbBoards input{flex:1;min-width:0;box-sizing:border-box;font:inherit;font-size:16px;padding:10px 12px;border:1px solid #d5d8e3;border-radius:10px}#wbBoards .new button{font:inherit;font-weight:600;border:0;border-radius:10px;background:#2c50d6;color:#fff;padding:0 14px;cursor:pointer}</style><div class="bx"><h2>Мои доски<button id="wbbX" aria-label="Закрыть">×</button></h2><div class="ls" id="wbbL"></div><form class="new" id="wbbF"><input id="wbbN" maxlength="40" placeholder="Название новой доски"><button type="submit">Создать</button></form></div>';
+    document.body.appendChild(o);
+    var unsub=null;
+    function close(){if(unsub)unsub();o.remove();}
+    $('wbbX').onclick=close;o.addEventListener('click',function(e){if(e.target===o)close();});
+    unsub=fs.collection('boards').orderBy('t').onSnapshot(function(sn){
+      var L=$('wbbL');if(!L)return;L.textContent='';
+      var docs=sn.docs||[];
+      if(!docs.length||typeof docs[0].data!=='function'){docs=[];}
+      docs.forEach(function(d){
+        var v=d.data(),id=d.id;
+        var row=document.createElement('div');row.className='it'+(id===BID?' cur':'');
+        var b=document.createElement('button');b.className='nm';b.textContent=(id===BID?'● ':'')+(v.name||'Без названия');
+        b.onclick=function(){if(id===BID)close();else openBoard(id);};
+        var r=document.createElement('button');r.className='sm';r.textContent='✎';r.title='Переименовать';
+        r.onclick=function(){var n=prompt('Новое название доски',v.name||'');if(n&&n.trim())fs.collection('boards').doc(id).set({name:n.trim().slice(0,40),t:v.t,by:v.by||''}).then(function(){if(id===BID)document.title=n.trim();});};
+        var x=document.createElement('button');x.className='sm';x.textContent='🗑';x.title='Убрать из списка';
+        x.onclick=function(){if(docs.length<2){alert('Нельзя удалить единственную доску.');return;}if(confirm('Убрать доску «'+(v.name||'')+'» из списка? Рисунки останутся в базе, но доска пропадёт.'))fs.collection('boards').doc(id).delete().then(function(){if(id===BID){var o2=docs.filter(function(q){return q.id!==id;})[0];openBoard(o2.id);}});};
+        row.appendChild(b);row.appendChild(r);row.appendChild(x);L.appendChild(row);
+      });
+    },function(){});
+    $('wbbF').onsubmit=function(e){
+      e.preventDefault();var n=$('wbbN').value.trim()||'Новая доска';
+      var id=hex32().slice(0,12);
+      fs.collection('boards').doc(id).set({name:n.slice(0,40),t:Date.now(),by:me.id}).then(function(){openBoard(id);});
+    };
+  };
 
+  var dbNs={collection:function(n){return n==='lib'?fs.collection('lib'):fs.collection('boards').doc(BID).collection(n);}};
   var profCache={};
   var userNs={
     me:function(){return Promise.resolve(me);},
@@ -497,10 +537,10 @@ window.FIREBASE_CONFIG = {
   var room=(function(){
     var liveCb=[],peerCb=[],mine={},ref,pres={};
     function ensure(){if(ref)return;
-      ref=rtdb.ref('presence/'+me.id);ref.onDisconnect().remove();mine.c=me.color;ref.set({c:me.color,t:firebaseTs()});
-      rtdb.ref('presence').on('value',function(s){pres=s.val()||{};firePeers();});
+      ref=rtdb.ref('presence/'+BID+'/'+me.id);ref.onDisconnect().remove();mine.c=me.color;ref.set({c:me.color,t:firebaseTs()});
+      rtdb.ref('presence/'+BID).on('value',function(s){pres=s.val()||{};firePeers();});
       var since=Date.now()-3000;
-      rtdb.ref('live').orderByChild('ts').startAt(since).on('child_added',function(s){
+      rtdb.ref('live/'+BID).orderByChild('ts').startAt(since).on('child_added',function(s){
         var v=s.val();if(!v||!v.data)return;
         var isMe=v.by===me.id;
         if(isMe){setTimeout(function(){s.ref.remove();},4000);return;}
@@ -522,14 +562,14 @@ window.FIREBASE_CONFIG = {
         var upd={c:me.color,x:null,y:null};for(var k2 in mine)upd[k2]=mine[k2];if(o.x===null)upd.x=null;
         return ref.update(upd);},
       emit:function(ev,data){ensure();if(ev!=='live')return Promise.resolve();
-        return rtdb.ref('live').push({by:me.id,ts:firebaseTs(),data:data});}
+        return rtdb.ref('live/'+BID).push({by:me.id,ts:firebaseTs(),data:data});}
     };
   })();
 
   window.claude={use:function(n){
     return readyP.then(function(){
       if(n==='user')return userNs;
-      if(n==='db')return fs;
+      if(n==='db')return dbNs;
       if(n==='room')return rtdb?room:null;
       if(n==='assets')return assetsNs;
       if(n==='downloads')return dlNs;
@@ -2000,7 +2040,7 @@ function optsHTML(){
     ['photo','Добавить фото','image'],['zout','Отдалить','zout'],['selall','Выбрать всё','all'],['fit','Показать всё','fit'],
     ['users','Участники','users'],['layers','Слой '+(S.layer+1),'layers'],['react','Реакции','heart'],['png','Сохранить доску в PDF','png'],
     ['full','Весь экран','full'],['z100','Масштаб 100%','zin'],['help','Подсказки','help']];
-  if(window.WB_LOGOUT)T.push(['logout','Выйти','users']);
+  if(window.WB_BOARDS)T.splice(8,0,['boards','Мои доски','layers']);if(window.WB_LOGOUT)T.push(['logout','Выйти','users']);
   return '<div class="ogrid">'+T.map(t=>'<button class="ot" data-opt="'+t[0]+'"'+(t[0]==='grid'?' aria-pressed="'+S.grid+'"':'')+'>'+ic(t[2])+'<span>'+t[1]+'</span></button>').join('')+'</div>';
 }
 function renderFly(){
@@ -2341,8 +2381,9 @@ function optAction(o){
     case 'fit':{const b=contentBounds();if(b)fitTo(b);else{V.s=1;V.tx=W/2;V.ty=H/2;viewChanged();}break;}
     case 'grid':S.grid=!S.grid;store.set('wb:grid',S.grid?'1':'0');renderFly();render();break;
     case 'selall':setTool('select');sel.clear();for(const it of order)if(vis(it)&&!(it.e.k==='p'&&it.e.e))sel.add(it.id);updateCtx();render();break;
+    case 'boards':window.WB_BOARDS();closeFly();break;
     case 'logout':if(confirm('Выйти из аккаунта?'))window.WB_LOGOUT();break;
-    case 'share':{const u=location.href.split('#')[0];if(navigator.share){navigator.share({title:'Общий вайтборд',url:u}).catch(()=>{});}else if(navigator.clipboard){navigator.clipboard.writeText(u).then(()=>toast('Ссылка скопирована. Подруга входит по своему логину и паролю.',4000),()=>showNote(u));}else showNote(u);break;}
+    case 'share':{const u=location.href;if(navigator.share){navigator.share({title:'Общий вайтборд',url:u}).catch(()=>{});}else if(navigator.clipboard){navigator.clipboard.writeText(u).then(()=>toast('Ссылка скопирована. Подруга входит по своему логину и паролю.',4000),()=>showNote(u));}else showNote(u);break;}
     case 'png':closeFly();exportPdf();break;
     case 'theme':{
       const r=document.documentElement,t=r.dataset.theme;
