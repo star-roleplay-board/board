@@ -1148,11 +1148,23 @@ function frame(){
   for(const [k,L] of live){if(nw-L.ts>8000){live.delete(k);continue;}paintStroke(ctx,{c:L.c,w:L.w,st:L.st,a:L.a,e:0},absPts(L.q));}
   if(live.size)setTimeout(render,1000);
   // shape preview
+  if(act&&act.type==='jl'){ctx.save();ctx.lineCap='round';ctx.strokeStyle=act.it&&act.it.e.k==='p'?(act.it.cc||act.it.e.c):S.color;ctx.globalAlpha=1;ctx.lineWidth=act.it&&act.it.e.k==='p'?act.it.e.w:S.size.pen;ctx.beginPath();ctx.moveTo(act.x0,act.y0);ctx.lineTo(act.x1,act.y1);ctx.stroke();ctx.restore();}
   if(act&&act.type==='shape'){
     shapeItem(ctx,{k:'s',sh:S.sh,f:S.fill?1:0,w:S.size.pen,q:[act.x1*Q,act.y1*Q,act.x2*Q,act.y2*Q]},S.color,S.alpha);
   }
   // selection box and lasso
   if(act&&act.type==='rot'&&act.started){ctx.save();ctx.translate(act.ax,act.ay);ctx.rotate(act.da);ctx.translate(-act.ax,-act.ay);for(const it of selSorted)if(vis(it))drawItem(ctx,it);ctx.restore();}
+  if(JN.size&&S.tool==='fill'){
+    ctx.save();ctx.lineCap='round';ctx.lineJoin='round';
+    for(const id of JN){const it=items.get(id);if(!it||!vis(it))continue;
+      ctx.save();ctx.translate(it.ox,it.oy);
+      if(it.e.k==='p'){const a=absPts(it.e.q);ctx.beginPath();ctx.moveTo(a[0],a[1]);for(let j=2;j<a.length;j+=2)ctx.lineTo(a[j],a[j+1]);
+        ctx.strokeStyle=accent;ctx.globalAlpha=.3;ctx.lineWidth=it.e.w+6/V.s;ctx.stroke();
+        ctx.globalAlpha=.9;ctx.lineWidth=1.5/V.s;ctx.setLineDash([5/V.s,4/V.s]);ctx.stroke();}
+      else{const b=bbox(it);ctx.strokeStyle=accent;ctx.globalAlpha=.9;ctx.lineWidth=1.5/V.s;ctx.setLineDash([5/V.s,4/V.s]);ctx.strokeRect(b[0],b[1],b[2]-b[0],b[3]-b[1]);}
+      ctx.restore();}
+    ctx.restore();
+  }
   let sb=selBounds();
   if(act&&act.type==='rsz'&&act.started){
     const m=getImg(act.it.e.a);
@@ -1427,7 +1439,11 @@ function begin(e,p){
       else if(S.em==='whole'||S.em==='wtop'){act={type:'ewhole',pid:e.pointerId,ids:new Set(),top:S.em==='wtop'};wholeAt(w);}
       else act={type:'lasso',pid:e.pointerId,erase:true,pts:[w.x,w.y],sx:p.x,sy:p.y,far:false};
       break;
-    case 'fill':act={type:'fill',pid:e.pointerId,sx:p.x,sy:p.y,far:false};break;
+    case 'fill':
+      if(S.fm==='sel')act={type:'jn',pid:e.pointerId,sx:p.x,sy:p.y,moved:false,w0:w};
+      else if(S.fm==='join'){const a=snapEnd(w.x,w.y);act={type:'jl',pid:e.pointerId,x0:a[0],y0:a[1],x1:w.x,y1:w.y,it:a[2]};}
+      else act={type:'fill',pid:e.pointerId,sx:p.x,sy:p.y,far:false};
+      break;
     case 'text':act={type:'text',pid:e.pointerId,sx:p.x,sy:p.y,w,far:false};break;
     case 'hand':act={type:'pan',pid:e.pointerId,sx:p.x,sy:p.y,tx:V.tx,ty:V.ty};cv.style.cursor='grabbing';break;
     case 'select':{
@@ -1489,6 +1505,8 @@ function moveAct(p){
       render();break;}
     case 'shape':act.x2=qz(w.x);act.y2=qz(w.y);sendCursor(w.x,w.y);render();break;
     case 'pan':V.tx=act.tx+(p.x-act.sx);V.ty=act.ty+(p.y-act.sy);viewChanged();break;
+    case 'jn':if(Math.hypot(p.x-act.sx,p.y-act.sy)>6){act.moved=true;jnAdd(act.w0);}if(act.moved)jnAdd(w);break;
+    case 'jl':{const a=snapEnd(w.x,w.y);act.x1=a[0];act.y1=a[1];if(!act.it)act.it=a[2];render();break;}
     case 'text':case 'fill':if(Math.hypot(p.x-act.sx,p.y-act.sy)>8)act.far=true;break;
     case 'ewhole':wholeAt(w);break;
     case 'lasso':{
@@ -1536,6 +1554,17 @@ function endAct(p,cancelled){
     case 'pan':cv.style.cursor=toolCursor();break;
     case 'text':if(!cancelled&&!a.far)openText(a.w);break;
     case 'fill':if(!cancelled&&!a.far)doFill(a.sx,a.sy);break;
+    case 'jn':{
+      if(!cancelled){if(!a.moved&&!jnPick(a.w0))toast('Нажмите на линию контура.',2000);
+        if(JN.size){S.fm='';toast('Контур выбран. Теперь выберите «Заливка» и тапните внутри.',3200);if(FL.g==='draw')renderFly();}}
+      render();break;}
+    case 'jl':{
+      if(cancelled||Math.hypot(a.x1-a.x0,a.y1-a.y0)<2/V.s){render();break;}
+      const dx=a.x1-a.x0,dy=a.y1-a.y0,x=qz(a.x0),y=qz(a.y0);
+      const bs=a.it&&a.it.e.k==='p'?a.it:null;
+      const e=putAdd({k:'p',c:bs?(bs.cc||bs.e.c):S.color,w:bs?bs.e.w:S.size.pen,q:[Math.round(x*Q),Math.round(y*Q),Math.round(qz(a.x1-x)*Q),Math.round(qz(a.y1-y)*Q)]});
+      if(JN.size&&e&&e.i)JN.add(e.i);
+      render();break;}
     case 'ewhole':{
       excl=null;
       if(!cancelled&&a.ids.size){const ids=[...a.ids];dOp(ids,1);pushUndo({t:a.top?'delf':'del',ids});}
@@ -1623,6 +1652,7 @@ function encodeRuns(m,w,h,k){
   return r;
 }
 function doFill(sx,sy){
+  if(JN.size){doFillJoin(sx,sy);return;}
   if(!baseValid)rebuildBase();
   const w=Math.max(1,Math.round(W)),h=Math.max(1,Math.round(H));
   fillCv.width=w;fillCv.height=h;
@@ -1637,7 +1667,7 @@ function doFill(sx,sy){
   /* gaps in the outline are closed automatically: try a small closing radius first, then bigger ones until the region stops leaking */
   const seed=y0*w+x0,stack=new Int32Array(N);
   let reg=null,dil=null,rUsed=0,sawOpen=false,tiny=false;
-  for(const r of [2,4,7,11]){
+  for(const r of [2,4]){
     const dl=dilate(bar,w,h,r);
     if(dl[seed]){if(r===2){dil=bar;}else continue;}else dil=dl;
     const rg=new Uint8Array(N);let sp=0,area=0,open=false;stack[sp++]=seed;rg[seed]=1;
@@ -1656,16 +1686,94 @@ function doFill(sx,sy){
   if(!reg){
     if(tiny&&!sawOpen)toast('Тут нечего закрашивать.',2200);
     else if(tiny)toast('Тут нечего закрашивать.',2200);
-    else toast('Область не замкнута: зазор в линии слишком большой (или контур не помещается на экране).',4200);
+    else toast('Залить нельзя: контур не замкнут. Закройте промежутки инструментом «Соединить».',4600);
     return;
   }
   const grown=dilate(reg,w,h,rUsed+1),fin=new Uint8Array(N);
   for(let i=0;i<N;i++)fin[i]=reg[i]||(grown[i]&&dil[i])?1:0;
+  commitFill(fin,w,h);
+}
+function commitFill(fin,w,h){
   let k=1,r=encodeRuns(fin,w,h,k);
   while(r.length>12000&&k<8){k*=2;r=encodeRuns(fin,w,h,k);}
   if(r.length>12000||!r.length){toast('Область слишком сложная для заливки.',3000);return;}
   const z=k/V.s,e={k:'f',c:S.color,x:Math.round(-V.tx/V.s*1000)/1000,y:Math.round(-V.ty/V.s*1000)/1000,z:Math.round(z*100000)/100000,r};
   putAdd(e,false);
+}
+
+
+/* ---- fill by chosen outline: swipe over the outline strokes ("Объединить"), gaps between their ends are joined automatically ---- */
+S.fm='';
+const JN=new Set();
+const isLine=it=>it&&vis(it)&&(it.e.k==='p'||it.e.k==='s')&&!(it.e.k==='p'&&it.e.e);
+function jnPts(it){const a=absPts(it.e.q);for(let j=0;j<a.length;j+=2){a[j]+=it.ox;a[j+1]+=it.oy;}return a;}
+/* tap on a line: select it together with every line that touches it (the whole outline) */
+function jnPick(wp){
+  const tol=Math.max(8/V.s,3);let top=null;
+  for(let j=order.length-1;j>=0;j--){const it=order[j];if(isLine(it)&&hit(it,wp.x,wp.y,tol)){top=it;break;}}
+  if(!top)return false;
+  const all=order.filter(it=>isLine(it)&&it.e.k==='p'&&!it.rot&&!it.fx&&!it.fy).slice(-400);
+  const pts=new Map();for(const it of all)pts.set(it.id,jnPts(it));
+  const touch=(A,B,d)=>{const a=pts.get(A.id),b=pts.get(B.id);if(!a||!b)return false;
+    const ba=bbox(A),bb=bbox(B);
+    if(ba[0]+A.ox-d>bb[2]+B.ox||ba[2]+A.ox+d<bb[0]+B.ox||ba[1]+A.oy-d>bb[3]+B.oy||ba[3]+A.oy+d<bb[1]+B.oy)return false;
+    for(let i=0;i<a.length;i+=2)for(let k=0;k<b.length;k+=2)if(Math.abs(a[i]-b[k])<d&&Math.abs(a[i+1]-b[k+1])<d&&Math.hypot(a[i]-b[k],a[i+1]-b[k+1])<d)return true;
+    return false;};
+  const got=new Set([top.id]),q=[top];
+  while(q.length){const A=q.pop();if(A.e.k!=='p')continue;
+    for(const B of all){if(got.has(B.id))continue;const d=(Math.max(A.e.w,B.e.w)*.75)+2/V.s;if(touch(A,B,d)){got.add(B.id);q.push(B);}}}
+  for(const id of got)JN.add(id);
+  return true;
+}
+function jnAdd(wp){
+  const tol=Math.max(6/V.s,3);let n=JN.size;
+  for(const it of order){
+    if(JN.has(it.id)||!isLine(it))continue;
+    if(hit(it,wp.x,wp.y,tol))JN.add(it.id);
+  }
+  if(JN.size!==n)render();
+}
+/* ends of lines attract the "join" stick */
+function snapEnd(wx,wy){
+  const R=18/V.s;let bd=R,bp=null,bi=null;
+  for(const it of order){
+    if(!isLine(it)||it.e.k!=='p'||it.rot||it.fx||it.fy)continue;
+    const a=jnPts(it),n=a.length;
+    for(const j of [0,n-2]){const d=Math.hypot(a[j]-wx,a[j+1]-wy);if(d<bd){bd=d;bp=[a[j],a[j+1]];bi=it;}}
+  }
+  return bp?[bp[0],bp[1],bi]:[wx,wy,null];
+}
+function doFillJoin(sx,sy){
+  const w=Math.max(1,Math.round(W)),h=Math.max(1,Math.round(H)),N=w*h;
+  const its=[];for(const id of JN){const it=items.get(id);if(it&&vis(it))its.push(it);else JN.delete(id);}
+  if(!its.length){toast('Сначала выберите контур инструментом «Выбрать».',3000);return;}
+  fillCv.width=w;fillCv.height=h;
+  const t=fillCv.getContext('2d',{willReadFrequently:true});
+  t.setTransform(V.s,0,0,V.s,V.tx,V.ty);
+  let maxW=2;
+  for(const it of its){t.save();t.globalAlpha=1;drawItem(t,it);t.restore();if(it.e.k==='p')maxW=Math.max(maxW,it.e.w);}
+  const d=t.getImageData(0,0,w,h).data,bar=new Uint8Array(N);
+  for(let i=0;i<N;i++)bar[i]=d[i*4+3]>24?1:0;
+  const x0=Math.round(sx),y0=Math.round(sy);
+  if(x0<0||y0<0||x0>=w||y0>=h)return;
+  const seed=y0*w+x0;
+  if(bar[seed]){toast('Нажмите внутри контура, а не на линии.',3000);return;}
+  let dil=dilate(bar,w,h,2);if(dil[seed])dil=dilate(bar,w,h,1);
+  const reg=new Uint8Array(N),stack=new Int32Array(N);
+  let sp=0,area=0,open=false;stack[sp++]=seed;reg[seed]=1;
+  while(sp){
+    const i=stack[--sp],x=i%w,y=(i-x)/w;area++;
+    if(x===0||y===0||x===w-1||y===h-1)open=true;
+    if(x>0&&!reg[i-1]&&!dil[i-1]){reg[i-1]=1;stack[sp++]=i-1;}
+    if(x<w-1&&!reg[i+1]&&!dil[i+1]){reg[i+1]=1;stack[sp++]=i+1;}
+    if(y>0&&!reg[i-w]&&!dil[i-w]){reg[i-w]=1;stack[sp++]=i-w;}
+    if(y<h-1&&!reg[i+w]&&!dil[i+w]){reg[i+w]=1;stack[sp++]=i+w;}
+  }
+  if(open){toast('Залить нельзя: контур не замкнут. Закройте промежутки инструментом «Соединить».',4600);return;}
+  if(area<12){toast('Тут нечего закрашивать.',2200);return;}
+  const gr=Math.min(40,Math.ceil(maxW*V.s/2)+2),grown=dilate(reg,w,h,gr),fin=new Uint8Array(N);
+  for(let i=0;i<N;i++)fin[i]=reg[i]||(grown[i]&&dil[i])?1:0;
+  commitFill(fin,w,h);
 }
 
 /* pinch / pan with two fingers */
@@ -2169,7 +2277,9 @@ function renderFly(){
       else if(cu==='style')h+=styleBody();
       else if(cu==='size')h+=sizeBody('pen');
       else if(cu==='shape')h+=shapeBody();
-      else if(cu==='fill')h+='<p class="hint">Заливка включена. Выберите цвет на вкладках «Базовый», «Больше» или «Свой» и нажмите внутри замкнутого контура. Небольшие щели в линии (до 20 пикселей) закроются сами.</p><div class="oprow"><button class="chipb" data-a="topen">← Вернуться к карандашу</button></div>';
+      else if(cu==='fill'){
+        const fm=S.fm||'',hint=fm==='sel'?'Нажмите на линию контура (или проведите по линиям) — контур выделится.':fm==='join'?'Проведите палочку между концами линий, чтобы закрыть промежуток. Концы притягиваются сами.':'Тапните внутри замкнутого контура. Если пишет, что контур не замкнут: «Соединить» закроет промежутки, «Выбрать» выделит контур.';
+        h+='<p class="hint">'+hint+'</p><div class="oprow"><button class="chipb" data-a="fmsel" aria-pressed="'+(fm==='sel')+'">Выбрать'+(JN.size?' ('+JN.size+')':'')+'</button><button class="chipb" data-a="fmjoin" aria-pressed="'+(fm==='join')+'">Соединить</button><button class="chipb" data-a="fmfill" aria-pressed="'+(fm==='')+'">Заливка</button></div><div class="oprow"><button class="chipb" data-a="jclear">Сбросить выбор</button><button class="chipb" data-a="topen">← К карандашу</button></div>';}
     }else if(FL.g==='eraser'){h+=cu==='mode'?modeBody():sizeBody('eraser');}
     else if(FL.g==='text'){
       if(cu==='base'||cu==='ext'||cu==='own')h+=colorBody(cu);
@@ -2207,7 +2317,7 @@ function refreshCursor(){if(cv.style.cursor==='grabbing')return;const k=toolCurs
 function setTool(t,noFly){
   commitText();
   if(t!=='select'&&sel.size)sel.clear();
-  S.tool=t;cv.style.cursor=toolCursor();
+  S.tool=t;if(t!=='fill'){S.fm='';if(JN.size){JN.clear();}}cv.style.cursor=toolCursor();
   if(!noFly){
     if(t==='pen'||t==='fill')openFly('draw');
     else if(t==='eraser')openFly('eraser');
@@ -2458,6 +2568,8 @@ $('fly').addEventListener('click',e=>{
     return;}
   if(d.a){
     if(d.a==='shfill'){S.fill=!S.fill;renderFly();}
+    else if(d.a==='fmsel'||d.a==='fmjoin'||d.a==='fmfill'){S.fm=d.a==='fmsel'?'sel':d.a==='fmjoin'?'join':'';renderFly();}
+    else if(d.a==='jclear'){JN.clear();S.fm='';renderFly();render();}
     else if(d.a==='topen'){setTool('pen',true);FL.tab.draw='base';renderFly();updateRail();}
     else if(d.a==='front')reorderSel(true);
     else if(d.a==='back')reorderSel(false);
@@ -2593,7 +2705,7 @@ $('rail').addEventListener('click',e=>{
   const b=e.target.closest('button');if(!b||b.disabled)return;
   const t=b.dataset.tool,a=b.dataset.act;
   if(t==='draw'){
-    if(S.tool==='fill'){FL.tab.draw='base';setTool('pen',true);closeFly();}else if(S.tool==='pen'){FL.g==='draw'?closeFly():openFly('draw');}else{setTool('pen',true);closeFly();}
+    if(S.tool==='fill'){if(FL.g==='draw'){FL.tab.draw='base';setTool('pen',true);closeFly();}else{FL.tab.draw='fill';openFly('draw');}}else if(S.tool==='pen'){FL.g==='draw'?closeFly():openFly('draw');}else{setTool('pen',true);closeFly();}
   }else if(t==='eraser'){
     if(S.tool==='eraser'){FL.g==='eraser'?closeFly():openFly('eraser');}else{setTool('eraser',true);closeFly();}
   }else if(t==='hand')setTool('hand');
