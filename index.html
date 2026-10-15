@@ -938,8 +938,10 @@ function drawItem(c,it){
     const ls=e.s.split('\n');for(let j=0;j<ls.length;j++)c.fillText(ls[j],e.x,e.y+j*e.z*1.25);c.restore();
   }else if(e.k==='i'){
     const m=getImg(e.a),w=it.rw??e.w,h=it.rh??e.h;
+    c.save();c.globalAlpha=it.ca??1;
     if(m.ok)c.drawImage(m.el,e.x,e.y,w,h);
     else{c.fillStyle='rgba(140,145,170,.22)';c.fillRect(e.x,e.y,w,h);}
+    c.restore();
   }
   if(mv||fl)c.restore();
 }
@@ -2010,7 +2012,7 @@ function selBody(){
   if(t==='color')return colorBody('base');
   if(t==='layer')return '<div class="list"><button class="lb" data-a="front">'+ic('up')+'Наверх</button><button class="lb" data-a="back">'+ic('down')+'Вниз</button></div>';
   if(t==='rot')return '<div class="list"><button class="lb" data-rot="-90">'+ic('rot')+'На 90° влево</button><button class="lb" data-rot="90">'+ic('rot')+'На 90° вправо</button><button class="lb" data-rot="180">'+ic('rot')+'На 180°</button><button class="lb" data-rot="-15">'+ic('rot')+'На 15° влево</button><button class="lb" data-rot="15">'+ic('rot')+'На 15° вправо</button></div><p class="hint" style="margin-top:6px">Или тяните кружок над рамкой.</p>';
-  if(t==='img')return '<div class="list"><button class="lb" data-a="bigger">'+ic('zin')+'Больше</button><button class="lb" data-a="smaller">'+ic('zout')+'Меньше</button></div>';
+  if(t==='img'){const im=items.get([...sel][0]),pv=Math.round((im&&im.ca!=null?im.ca:1)*100);return '<div class="oprow"><span>Прозрачн.</span><input type="range" id="imo" min="5" max="100" step="1" value="'+pv+'" aria-label="Непрозрачность картинки"><b id="imv">'+pv+'%</b></div><div class="list"><button class="lb" data-a="bigger">'+ic('zin')+'Больше</button><button class="lb" data-a="smaller">'+ic('zout')+'Меньше</button></div>';}
   return '';
 }
 function modeBody(){
@@ -2270,13 +2272,13 @@ function dupSel(){
   for(const it of list){
     const e=JSON.parse(JSON.stringify(it.e));e.i=newEid();e.t=nowT();
     const dx=it.ox+off,dy=it.oy+off;
-    if(it.cc)e.c=it.cc;if(it.ca)e.a=it.ca;
+    if(it.cc)e.c=it.cc;if(it.ca&&e.k!=='i')e.a=it.ca;
     if(e.k==='p'){e.q[0]=Math.round(e.q[0]+dx*Q);e.q[1]=Math.round(e.q[1]+dy*Q);}
     else if(e.k==='s'){e.q=[e.q[0]+dx*Q,e.q[1]+dy*Q,e.q[2]+dx*Q,e.q[3]+dy*Q].map(Math.round);}
     else{e.x+=dx;e.y+=dy;}
     if(e.k==='i'&&(it.rw!=null)){e.w=it.rw;e.h=it.rh;}
     const c=clean(e);if(!c)continue;
-    put(c);ids.push(c.i);if(it.gid){if(!gmap.has(it.gid))gmap.set(it.gid,[]);gmap.get(it.gid).push(c.i);}
+    put(c);ids.push(c.i);if(e.k==='i'&&it.ca)opEntry('cl',{r:[c.i],c:'',a:it.ca});if(it.gid){if(!gmap.has(it.gid))gmap.set(it.gid,[]);gmap.get(it.gid).push(c.i);}
     if(it.fx||it.fy){const nb=bbox(items.get(c.i));opEntry('fl',{r:[c.i],ax:(nb[0]+nb[2])/2,ay:(nb[1]+nb[3])/2,x:it.fx?1:0,y:it.fy?1:0});}
     if(it.rot){const nb=bbox(items.get(c.i));opEntry('ro',{r:[c.i],ax:(nb[0]+nb[2])/2,ay:(nb[1]+nb[3])/2,a:it.rot});}
   }
@@ -2301,7 +2303,7 @@ function snapAsset(){
   const cx=(b[0]+b[2])/2,cy=(b[1]+b[3])/2,its=[];
   for(const it of list){
     const e=JSON.parse(JSON.stringify(it.e));delete e.i;delete e.t;
-    if(it.cc)e.c=it.cc;if(it.ca)e.a=it.ca;
+    if(it.cc)e.c=it.cc;if(it.ca&&e.k!=='i')e.a=it.ca;
     if(e.k==='i'&&it.rw!=null){e.w=it.rw;e.h=it.rh;}
     shiftEntry(e,it.ox-cx,it.oy-cy);
     const o={e};if(it.gid)o.g=it.gid;if(it.fx)o.fx=1;if(it.fy)o.fy=1;if(it.rot)o.rot=it.rot;its.push(o);
@@ -2451,11 +2453,23 @@ $('fly').addEventListener('input',e=>{
   const t=e.target;
   if(t.id==='szr'){const v=+t.value;if(FL.g==='eraser')S.size.eraser=v;else S.size.pen=v;$('szv').textContent=v;render();}
   else if(t.id==='tzr'){S.size.text=+t.value;$('tzv').textContent=t.value;if(tedit)placeText();}
+  else if(t.id==='imo'){const v=(+t.value)/100;$('imv').textContent=t.value+'%';
+    for(const id of sel){const it=items.get(id);if(!it||it.e.k!=='i')continue;if(imoOrig===null)imoOrig=it.ca??1;it.ca=v<1?v:null;}
+    invalidate();}
   else if(t.id==='opr'){S.alpha=(+t.value)/100;}
   else if(t.id==='cin'){setColor(t.value,true);const h=$('hin');if(h)h.value=t.value;}
   else if(t.id==='hin'){let v=t.value.trim();if(v[0]!=='#')v='#'+v;if(HEX.test(v)){setColor(v.toLowerCase(),true);const c=$('cin');if(c)c.value=v;}}
 });
-$('fly').addEventListener('change',e=>{if(e.target.id==='opr'||e.target.id==='cin')renderFly();if(e.target.id==='opr'&&FL.g==='select')recolorSel(S.color,S.alpha);if(e.target.id==='cin'&&FL.g==='select')recolorSel(S.color,S.alpha);});
+let imoOrig=null;
+$('fly').addEventListener('change',e=>{
+  if(e.target.id==='imo'&&!readOnly){
+    const v=(+e.target.value)/100,o=imoOrig==null?1:imoOrig;imoOrig=null;
+    const ids=[...sel].filter(id=>{const it=items.get(id);return it&&it.e.k==='i';});
+    if(ids.length&&v!==o){for(const id of ids)opEntry('cl',{r:[id],c:'',a:v});
+      pushUndo({t:'ops',u:ids.map(id=>['cl',{r:[id],c:'',a:o}]),r:ids.map(id=>['cl',{r:[id],c:'',a:v}])});}
+    return;
+  }
+if(e.target.id==='opr'||e.target.id==='cin')renderFly();if(e.target.id==='opr'&&FL.g==='select')recolorSel(S.color,S.alpha);if(e.target.id==='cin'&&FL.g==='select')recolorSel(S.color,S.alpha);});
 
 function optAction(o){
   switch(o){
