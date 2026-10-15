@@ -902,6 +902,12 @@ function bbox(it){
   }
   return (it.bb=[x1,y1,x2,y2]);
 }
+function rszItem(){
+  if(S.tool!=='select'||readOnly||sel.size!==1)return null;
+  const it=items.get([...sel][0]);
+  if(!it||it.e.k!=='i'||it.rot||!vis(it))return null;
+  return it;
+}
 const handlePos=sb=>[(sb[0]+sb[2])/2,sb[1]-4/V.s-30/V.s];
 function viewRect(){return [-V.tx/V.s,-V.ty/V.s,(W-V.tx)/V.s,(H-V.ty)/V.s];}
 function wbounds(it){
@@ -1145,7 +1151,12 @@ function frame(){
   }
   // selection box and lasso
   if(act&&act.type==='rot'&&act.started){ctx.save();ctx.translate(act.ax,act.ay);ctx.rotate(act.da);ctx.translate(-act.ax,-act.ay);for(const it of selSorted)if(vis(it))drawItem(ctx,it);ctx.restore();}
-  const sb=selBounds();
+  let sb=selBounds();
+  if(act&&act.type==='rsz'&&act.started){
+    const m=getImg(act.it.e.a);
+    if(m.ok)ctx.drawImage(m.el,act.l,act.t,act.nw,act.nh);else{ctx.fillStyle='rgba(140,145,170,.22)';ctx.fillRect(act.l,act.t,act.nw,act.nh);}
+    sb=[act.l,act.t,act.l+act.nw,act.t+act.nh];
+  }
   if(sb){
     let dx=0,dy=0;if(act&&act.type==='move'&&act.started){dx=act.dx;dy=act.dy;}
     const pad=4/V.s;
@@ -1153,7 +1164,11 @@ function frame(){
     if(act&&act.type==='rot'&&act.started){ctx.translate(act.ax,act.ay);ctx.rotate(act.da);ctx.translate(-act.ax,-act.ay);}
     ctx.globalAlpha=.025;ctx.fillRect(sb[0]+dx-pad,sb[1]+dy-pad,sb[2]-sb[0]+2*pad,sb[3]-sb[1]+2*pad);
     ctx.globalAlpha=.35;ctx.lineWidth=1/V.s;ctx.strokeRect(sb[0]+dx-pad,sb[1]+dy-pad,sb[2]-sb[0]+2*pad,sb[3]-sb[1]+2*pad);
-    if(S.tool==='select'&&!(act&&act.type==='move'&&act.started)){
+    if(rszItem()&&!(act&&act.type==='move'&&act.started)){
+      ctx.setLineDash([]);ctx.globalAlpha=1;ctx.lineWidth=1.5/V.s;ctx.fillStyle='#fff';
+      const r=6.5/V.s;for(const [cx,cy] of [[sb[0],sb[1]],[sb[2],sb[1]],[sb[2],sb[3]],[sb[0],sb[3]]]){ctx.beginPath();ctx.rect(cx-pad*(cx===sb[0]?1:-1)-r,cy-pad*(cy===sb[1]?1:-1)-r,2*r,2*r);ctx.fill();ctx.stroke();}
+    }
+    if(S.tool==='select'&&!(act&&act.type==='move'&&act.started)&&!(act&&act.type==='rsz')){
       const h=handlePos(sb);ctx.setLineDash([]);ctx.lineWidth=1.5/V.s;ctx.globalAlpha=.8;ctx.beginPath();ctx.moveTo(h[0],sb[1]-pad);ctx.lineTo(h[0],h[1]);ctx.stroke();
       ctx.fillStyle='#fff';ctx.beginPath();ctx.arc(h[0],h[1],9/V.s,0,TAU);ctx.fill();ctx.stroke();
       ctx.beginPath();ctx.arc(h[0],h[1],4.2/V.s,-2.2,1.2);ctx.stroke();
@@ -1415,6 +1430,12 @@ function begin(e,p){
     case 'hand':act={type:'pan',pid:e.pointerId,sx:p.x,sy:p.y,tx:V.tx,ty:V.ty};cv.style.cursor='grabbing';break;
     case 'select':{
       const b=selBounds(),tol=10/V.s;
+      const ri=rszItem();
+      if(b&&ri){const pad=4/V.s,cs=[[b[0]-pad,b[1]-pad],[b[2]+pad,b[1]-pad],[b[2]+pad,b[3]+pad],[b[0]-pad,b[3]+pad]];
+        for(let c=0;c<4;c++)if(Math.hypot(w.x-cs[c][0],w.y-cs[c][1])<=18/V.s){
+          const o=cs[(c+2)%4],w0=b[2]-b[0],h0=b[3]-b[1];
+          act={type:'rsz',pid:e.pointerId,c,it:ri,ax:(c===0||c===3)?b[2]:b[0],ay:(c===0||c===1)?b[3]:b[1],sx:(c===1||c===2)?1:-1,sy:(c===2||c===3)?1:-1,w0,h0,b,nw:w0,nh:h0,l:b[0],t:b[1],started:false};break;}
+        if(act&&act.type==='rsz')break;}
       if(b){const h=handlePos(b);if(Math.hypot(w.x-h[0],w.y-h[1])<=22/V.s){const ax=(b[0]+b[2])/2,ay=(b[1]+b[3])/2;act={type:'rot',pid:e.pointerId,ax,ay,a0:Math.atan2(w.y-ay,w.x-ax),da:0,started:false};break;}}
       if(b&&w.x>=b[0]-tol&&w.x<=b[2]+tol&&w.y>=b[1]-tol&&w.y<=b[3]+tol)
         act={type:'move',pid:e.pointerId,x0:w.x,y0:w.y,sx:p.x,sy:p.y,dx:0,dy:0,started:false};
@@ -1461,6 +1482,13 @@ function moveAct(p){
       if(Math.hypot(p.x-act.sx,p.y-act.sy)>6)act.far=true;
       if(act.far&&!act.erase){const n=Date.now();if(!act.pt||n-act.pt>110){act.pt=n;act.pre=lassoFind(q,Math.max(3,8/V.s));}}
       render();break;}
+    case 'rsz':{
+      if(!act.started){act.started=true;excl=new Set(sel);selSorted=order.filter(it=>sel.has(it.id));invalidate();}
+      const asp=act.w0/act.h0;
+      let nw=Math.max((w.x-act.ax)*act.sx,(w.y-act.ay)*act.sy*asp);
+      nw=Math.min(8000,Math.max(20,nw));const nh=nw/asp;
+      act.nw=nw;act.nh=nh;act.l=act.sx>0?act.ax:act.ax-nw;act.t=act.sy>0?act.ay:act.ay-nh;
+      render();break;}
     case 'rot':{
       if(!act.started){act.started=true;excl=new Set(sel);selSorted=order.filter(it=>sel.has(it.id));invalidate();}
       let da=Math.atan2(w.y-act.ay,w.x-act.ax)-act.a0;const st=Math.PI/12,sn=Math.round(da/st)*st;if(Math.abs(da-sn)<.07)da=sn;
@@ -1505,6 +1533,19 @@ function endAct(p,cancelled){
         else{if(!a.add)sel.clear();for(const id of found)sel.add(id);expandGroups();}
       }
       updateCtx();render();break;}
+    case 'rsz':{
+      excl=null;
+      if(!cancelled&&a.started){
+        const it=a.it,id=it.id,ow=it.rw??it.e.w,oh=it.rh??it.e.h,nw=Math.round(a.nw),nh=Math.round(a.nh);
+        const dx=qz(a.l-a.b[0]),dy=qz(a.t-a.b[1]);
+        if(nw!==ow||nh!==oh||dx||dy){
+          const u=[['r',{r:id,w:ow,h:oh}]],r=[['r',{r:id,w:nw,h:nh}]];
+          opEntry('r',{r:id,w:nw,h:nh});
+          if(dx||dy){mOp([id],dx,dy);u.push(['m',{r:[id],x:-dx,y:-dy}]);r.push(['m',{r:[id],x:dx,y:dy}]);}
+          pushUndo({t:'ops',u,r});
+        }
+      }
+      invalidate();break;}
     case 'rot':{
       excl=null;
       if(!cancelled&&a.started&&Math.abs(a.da)>.005){const ids=[...sel],o={r:ids,ax:a.ax,ay:a.ay,a:a.da};opEntry('ro',o);pushUndo({t:'ops',u:[['ro',Object.assign({},o,{a:-a.da})]],r:[['ro',o]]});}
@@ -1524,7 +1565,7 @@ function cancelAct(){
   if(!act)return;
   const a=act;act=null;
   if(a.type==='draw'){cur=null;invalidate();}
-  if(a.type==='move'||a.type==='ewhole'||a.type==='rot'){excl=null;invalidate();}
+  if(a.type==='move'||a.type==='ewhole'||a.type==='rot'||a.type==='rsz'){excl=null;invalidate();}
   render();
 }
 
