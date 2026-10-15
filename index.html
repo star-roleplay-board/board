@@ -1634,21 +1634,32 @@ function doFill(sx,sy){
   const si=(y0*w+x0)*4,sr=d[si],sg=d[si+1],sb=d[si+2];
   const bar=new Uint8Array(N);
   for(let i=0;i<N;i++){const k=i*4;bar[i]=(Math.abs(d[k]-sr)+Math.abs(d[k+1]-sg)+Math.abs(d[k+2]-sb))>72?1:0;}
-  let dil=dilate(bar,w,h,2);
-  if(dil[y0*w+x0])dil=bar;
-  const seed=y0*w+x0,reg=new Uint8Array(N),stack=new Int32Array(N);
-  let sp=0,area=0,open=false;stack[sp++]=seed;reg[seed]=1;
-  while(sp){
-    const i=stack[--sp],x=i%w,y=(i-x)/w;area++;
-    if(x===0||y===0||x===w-1||y===h-1)open=true;
-    if(x>0&&!reg[i-1]&&!dil[i-1]){reg[i-1]=1;stack[sp++]=i-1;}
-    if(x<w-1&&!reg[i+1]&&!dil[i+1]){reg[i+1]=1;stack[sp++]=i+1;}
-    if(y>0&&!reg[i-w]&&!dil[i-w]){reg[i-w]=1;stack[sp++]=i-w;}
-    if(y<h-1&&!reg[i+w]&&!dil[i+w]){reg[i+w]=1;stack[sp++]=i+w;}
+  /* gaps in the outline are closed automatically: try a small closing radius first, then bigger ones until the region stops leaking */
+  const seed=y0*w+x0,stack=new Int32Array(N);
+  let reg=null,dil=null,rUsed=0,sawOpen=false,tiny=false;
+  for(const r of [2,4,7,11]){
+    const dl=dilate(bar,w,h,r);
+    if(dl[seed]){if(r===2){dil=bar;}else continue;}else dil=dl;
+    const rg=new Uint8Array(N);let sp=0,area=0,open=false;stack[sp++]=seed;rg[seed]=1;
+    while(sp){
+      const i=stack[--sp],x=i%w,y=(i-x)/w;area++;
+      if(x===0||y===0||x===w-1||y===h-1)open=true;
+      if(x>0&&!rg[i-1]&&!dil[i-1]){rg[i-1]=1;stack[sp++]=i-1;}
+      if(x<w-1&&!rg[i+1]&&!dil[i+1]){rg[i+1]=1;stack[sp++]=i+1;}
+      if(y>0&&!rg[i-w]&&!dil[i-w]){rg[i-w]=1;stack[sp++]=i-w;}
+      if(y<h-1&&!rg[i+w]&&!dil[i+w]){rg[i+w]=1;stack[sp++]=i+w;}
+    }
+    if(open){sawOpen=true;continue;}
+    if(area<12){tiny=true;break;}
+    reg=rg;rUsed=r;break;
   }
-  if(open){toast('Область не замкнута: линии должны образовывать контур (и целиком помещаться на экране).',4200);return;}
-  if(area<12){toast('Тут нечего закрашивать.',2200);return;}
-  const grown=dilate(reg,w,h,3),fin=new Uint8Array(N);
+  if(!reg){
+    if(tiny&&!sawOpen)toast('Тут нечего закрашивать.',2200);
+    else if(tiny)toast('Тут нечего закрашивать.',2200);
+    else toast('Область не замкнута: зазор в линии слишком большой (или контур не помещается на экране).',4200);
+    return;
+  }
+  const grown=dilate(reg,w,h,rUsed+1),fin=new Uint8Array(N);
   for(let i=0;i<N;i++)fin[i]=reg[i]||(grown[i]&&dil[i])?1:0;
   let k=1,r=encodeRuns(fin,w,h,k);
   while(r.length>12000&&k<8){k*=2;r=encodeRuns(fin,w,h,k);}
@@ -2158,7 +2169,7 @@ function renderFly(){
       else if(cu==='style')h+=styleBody();
       else if(cu==='size')h+=sizeBody('pen');
       else if(cu==='shape')h+=shapeBody();
-      else if(cu==='fill')h+='<p class="hint">Заливка включена. Выберите цвет на вкладках «Базовый», «Больше» или «Свой» и нажмите внутри замкнутого контура. Если линии не сходятся, щель до 4 пикселей закроется сама.</p><div class="oprow"><button class="chipb" data-a="topen">← Вернуться к карандашу</button></div>';
+      else if(cu==='fill')h+='<p class="hint">Заливка включена. Выберите цвет на вкладках «Базовый», «Больше» или «Свой» и нажмите внутри замкнутого контура. Небольшие щели в линии (до 20 пикселей) закроются сами.</p><div class="oprow"><button class="chipb" data-a="topen">← Вернуться к карандашу</button></div>';
     }else if(FL.g==='eraser'){h+=cu==='mode'?modeBody():sizeBody('eraser');}
     else if(FL.g==='text'){
       if(cu==='base'||cu==='ext'||cu==='own')h+=colorBody(cu);
