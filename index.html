@@ -1474,7 +1474,14 @@ function moveAct(p){
   const w=toWorld(p.x,p.y);
   switch(act.type){
     case 'draw':{
-      const x=qz(w.x),y=qz(w.y),q=cur.p,md=Math.min(1/V.s,2);
+      const q=cur.p,md=Math.min(1/V.s,2);
+      let wx=w.x,wy=w.y;
+      if(!cur.erase){ /* light stabilizer: small hand tremor is damped, fast moves follow almost 1:1 */
+        if(!cur.sm)cur.sm=[q[q.length-2],q[q.length-1]];
+        const d=Math.hypot(wx-cur.sm[0],wy-cur.sm[1])*V.s,k=d<3?.22:d<16?.22+(d-3)/13*.6:.82;
+        cur.sm[0]+=(wx-cur.sm[0])*k;cur.sm[1]+=(wy-cur.sm[1])*k;wx=cur.sm[0];wy=cur.sm[1];
+      }
+      const x=qz(wx),y=qz(wy);
       sendCursor(w.x,w.y);
       if(Math.hypot(x-q[q.length-2],y-q[q.length-1])<md)return;
       q.push(x,y);drawIncr();liveQueue();
@@ -1514,7 +1521,11 @@ function endAct(p,cancelled){
   const w=toWorld(p.x,p.y);
   switch(a.type){
     case 'draw':
-      if(cancelled){cur=null;invalidate();}else finishStroke(false);
+      if(cancelled){cur=null;invalidate();}
+      else{
+        if(cur&&!cur.erase&&cur.sm&&cur.p.length>=4){const x=qz(w.x),y=qz(w.y),q=cur.p;if(Math.hypot(x-q[q.length-2],y-q[q.length-1])>=.25){q.push(x,y);}}
+        finishStroke(false);
+      }
       break;
     case 'shape':{
       if(cancelled||!canDraw()){render();break;}
