@@ -1105,15 +1105,15 @@ const profs=new Map();
 const GRIDP=60; /* minor cell, world units: size 3 ("Medium", 8) is ~13% of a cell, like the original; every 5th line is the major one */
 function drawGrid(){
   /* two fixed levels only, lines are world-sized: they thicken and thin with zoom together with the cells. Far out they just fade away */
-  const lv=[[GRIDP,.8,.05],[GRIDP*5,3,.1]];
-  for(const [p,lw,al] of lv){
+  const lv=[[GRIDP,3.7,.055,1],[GRIDP*5,4.5,.12,0]]; /* measured on the original: line = ~6% (minor) / ~7.5% (major) of a cell, grey 241 / 224 */
+  for(const [p,lw,al,sk] of lv){
     const st=p*V.s,f=Math.min(1,Math.max(0,(st-3)/6));
     if(f<=0)continue;
     const lwp=Math.max(1,Math.round(lw*V.s)),off=lwp%2?.5:0;
     ctx.strokeStyle='rgba(0,0,0,'+(al*f).toFixed(3)+')';ctx.lineWidth=lwp;ctx.beginPath();
     const i0=Math.floor(-V.tx/st)-1,i1=Math.ceil((W-V.tx)/st)+1,j0=Math.floor(-V.ty/st)-1,j1=Math.ceil((H-V.ty)/st)+1;
-    for(let i=i0;i<=i1;i++){const q=Math.round(V.tx+i*st)+off;ctx.moveTo(q,-4);ctx.lineTo(q,H+4);}
-    for(let j=j0;j<=j1;j++){const q=Math.round(V.ty+j*st)+off;ctx.moveTo(-4,q);ctx.lineTo(W+4,q);}
+    for(let i=i0;i<=i1;i++){if(sk&&i%5===0)continue;const q=Math.round(V.tx+i*st)+off;ctx.moveTo(q,-4);ctx.lineTo(q,H+4);}
+    for(let j=j0;j<=j1;j++){if(sk&&j%5===0)continue;const q=Math.round(V.ty+j*st)+off;ctx.moveTo(-4,q);ctx.lineTo(W+4,q);}
     ctx.stroke();
   }
 }
@@ -2462,9 +2462,9 @@ async function exportPdf(){
   for(let lv=0;lv<2;lv++){
     const st=PDFGRID*Math.pow(5,lv),i0=Math.ceil(x0/st),i1=Math.floor((x0+w)/st),j0=Math.ceil(y0/st),j1=Math.floor((y0+h)/st);
     if((i1-i0)+(j1-j0)>6000)continue;
-    content+='/'+(lv?'G2':'G1')+' gs '+(lv?3:.8)+' w 0 G\n';
-    for(let i=i0;i<=i1;i++){const x=i*st-x0;content+=f(x)+' 0 m '+f(x)+' '+f(h)+' l S\n';}
-    for(let j=j0;j<=j1;j++){const y=h-(j*st-y0);content+='0 '+f(y)+' m '+f(w)+' '+f(y)+' l S\n';}
+    content+='/'+(lv?'G2':'G1')+' gs '+(lv?4.5:3.7)+' w 0 G\n';
+    for(let i=i0;i<=i1;i++){if(!lv&&i%5===0)continue;const x=i*st-x0;content+=f(x)+' 0 m '+f(x)+' '+f(h)+' l S\n';}
+    for(let j=j0;j<=j1;j++){if(!lv&&j%5===0)continue;const y=h-(j*st-y0);content+='0 '+f(y)+' m '+f(w)+' '+f(y)+' l S\n';}
   }
   const xo=[];
   toast('Собираю PDF…',60000);
@@ -2493,7 +2493,7 @@ async function exportPdf(){
     const cs=enc.encode('q '+ps+' 0 0 '+ps+' 0 0 cm\n'+content);
     put(4,'<< /Length '+cs.length+' >>',cs);
     put(1,'<< /Type /Catalog /Pages 2 0 R >>');put(2,'<< /Type /Pages /Kids [3 0 R] /Count 1 >>');
-    put(3,'<< /Type /Page /Parent 2 0 R /MediaBox [0 0 '+f(w*ps)+' '+f(h*ps)+'] /Contents 4 0 R /Resources << /ExtGState << /G1 << /CA 0.05 >> /G2 << /CA 0.1 >> >> /XObject << '+xo.join(' ')+' >> >> >>');
+    put(3,'<< /Type /Page /Parent 2 0 R /MediaBox [0 0 '+f(w*ps)+' '+f(h*ps)+'] /Contents 4 0 R /Resources << /ExtGState << /G1 << /CA 0.055 >> /G2 << /CA 0.12 >> >> /XObject << '+xo.join(' ')+' >> >> >>');
     const parts=[enc.encode('%PDF-1.5\n')],offs=[];let pos=parts[0].length;
     for(let id=1;id<nid;id++){const u=objs.get(id);if(!u)continue;offs[id]=pos;parts.push(u);pos+=u.length;}
     let xr='xref\n0 '+nid+'\n0000000000 65535 f \n';
