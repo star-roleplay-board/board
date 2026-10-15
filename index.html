@@ -1439,7 +1439,12 @@ function begin(e,p){
       if(b){const h=handlePos(b);if(Math.hypot(w.x-h[0],w.y-h[1])<=22/V.s){const ax=(b[0]+b[2])/2,ay=(b[1]+b[3])/2;act={type:'rot',pid:e.pointerId,ax,ay,a0:Math.atan2(w.y-ay,w.x-ax),da:0,started:false};break;}}
       if(b&&w.x>=b[0]-tol&&w.x<=b[2]+tol&&w.y>=b[1]-tol&&w.y<=b[3]+tol)
         act={type:'move',pid:e.pointerId,x0:w.x,y0:w.y,sx:p.x,sy:p.y,dx:0,dy:0,started:false};
-      else act={type:'lasso',pid:e.pointerId,erase:false,pts:[w.x,w.y],sx:p.x,sy:p.y,far:false,add:e.shiftKey||S.selAdd};
+      else{
+        const ht=(e.shiftKey||S.selAdd)?null:hitTop(w.x,w.y,tol);
+        if(ht&&ht.e.k==='i'){sel.clear();sel.add(ht.id);expandGroups();updateCtx();render();
+          act={type:'move',pid:e.pointerId,x0:w.x,y0:w.y,sx:p.x,sy:p.y,dx:0,dy:0,started:false};}
+        else act={type:'lasso',pid:e.pointerId,erase:false,pts:[w.x,w.y],sx:p.x,sy:p.y,far:false,add:e.shiftKey||S.selAdd};
+      }
       break;}
   }
 }
